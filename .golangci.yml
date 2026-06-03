@@ -1,0 +1,178 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  relative-path-mode: gomod
+  allow-parallel-runners: true
+
+linters:
+  default: standard
+
+  enable:
+    - bidichk
+    - bodyclose
+    - contextcheck
+    - copyloopvar
+    - dupl
+    - errcheck
+    - errorlint
+    - gocritic
+    - gocyclo
+    - govet
+    - ineffassign
+    - intrange
+    - mirror
+    - misspell
+    - modernize
+    - nilerr
+    - nilnesserr
+    - noctx
+    - nolintlint
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - staticcheck
+    - unconvert
+    - unqueryvet
+    - unused
+    - wastedassign
+    - wsl_v5
+    - zerologlint
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+
+    govet:
+      disable:
+        - composites
+
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        - -ST1003
+
+    gocyclo:
+      min-complexity: 15
+
+    dupl:
+      threshold: 150
+
+
+    gocritic:
+      disable-all: true
+      enabled-checks:
+        - appendAssign
+        - badCall
+        - badCond
+        - dupArg
+        - dupBranchBody
+        - dupCase
+        - dupSubExpr
+        - exitAfterDefer
+        - mapKey
+        - offBy1
+        - regexpMust
+        - sloppyTypeAssert
+        - switchTrue
+        - typeSwitchVar
+        - underef
+        - unslice
+        - valSwap
+
+    revive:
+      rules:
+        - name: var-naming
+          arguments:
+            - ["API", "ASCII", "CPU", "CSS", "DB", "DNS", "EOF", "GUID", "HTML", "HTTP", "HTTPS", "ID", "IP", "JSON", "JWT", "OAuth", "QPS", "RAM", "RPC", "SLA", "SMTP", "SQL", "SSH", "TCP", "TLS", "TTL", "UDP", "UI", "UID", "UUID", "URI", "URL", "UTF8", "VM", "XML", "XSRF", "XSS"]
+
+        - name: unexported-return
+        - name: receiver-naming
+
+        - name: indent-error-flow
+          arguments:
+            - preserve-scope
+
+        - name: errorf
+        - name: empty-block
+
+        - name: early-return
+          arguments:
+            - preserve-scope
+
+        - name: redefines-builtin-id
+
+        - name: unused-parameter
+          arguments:
+            - allow-regex: "^_"
+
+        - name: unreachable-code
+        - name: use-any
+        - name: use-errors-new
+
+    unqueryvet:
+      check-sql-builders: true
+      check-aliased-wildcard: true
+      check-string-concat: false
+      check-format-strings: false
+      check-string-builder: false
+      check-subqueries: false
+      check-n1: false
+      check-sql-injection: false
+      check-tx-leaks: false
+      sql-builders:
+        pgx: true
+        sqlx: true
+        squirrel: false
+        gorm: false
+        ent: false
+        bun: false
+        sqlboiler: false
+        jet: false
+
+    wsl_v5:
+      allow-first-in-block: true
+      allow-whole-block: false
+      branch-max-lines: 2
+
+  exclusions:
+    generated: lax
+    presets:
+      - common-false-positives
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - dupl
+          - gocyclo
+
+      - path: _test\.go
+        linters:
+          - revive
+        text: "unused-parameter:"
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+
+  settings:
+    gofumpt:
+      extra-rules: true
+    goimports:
+      local-prefixes:
+        - git.wildberries.ru
+        - gitlab.wildberries.ru
+
+  exclusions:
+    generated: lax
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
