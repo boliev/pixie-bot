@@ -33,9 +33,9 @@ type Product struct {
 }
 
 var ProductCatalog = map[ProductCode]Product{
-	Product5Credits:  {Credits: 5, AmountStars: 50, Title: "5 кредитов"},
-	Product10Credits: {Credits: 10, AmountStars: 90, Title: "10 кредитов"},
-	Product25Credits: {Credits: 25, AmountStars: 200, Title: "25 кредитов"},
+	Product5Credits:  {Credits: 5, AmountStars: 250, Title: "5 кредитов"},
+	Product10Credits: {Credits: 10, AmountStars: 450, Title: "10 кредитов"},
+	Product25Credits: {Credits: 25, AmountStars: 900, Title: "25 кредитов"},
 }
 
 type Payment struct {

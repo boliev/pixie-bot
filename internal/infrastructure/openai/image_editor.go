@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"time"
 )
 
@@ -66,9 +67,17 @@ func (e *ImageEditor) buildMultipartBody(images [][]byte, prompt string) (*bytes
 			fieldName = "image[]"
 		}
 
-		part, err := w.CreateFormFile(fieldName, fmt.Sprintf("image_%d.png", i))
+		mimeType := http.DetectContentType(img)
+
+		ext := mimeExtension(mimeType)
+
+		h := make(textproto.MIMEHeader)
+		h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="image_%d%s"`, fieldName, i, ext))
+		h.Set("Content-Type", mimeType)
+
+		part, err := w.CreatePart(h)
 		if err != nil {
-			return nil, "", fmt.Errorf("create form file: %w", err)
+			return nil, "", fmt.Errorf("create form part: %w", err)
 		}
 
 		if _, err = part.Write(img); err != nil {
@@ -86,10 +95,6 @@ func (e *ImageEditor) buildMultipartBody(images [][]byte, prompt string) (*bytes
 
 	if err := w.WriteField("n", "1"); err != nil {
 		return nil, "", fmt.Errorf("write n field: %w", err)
-	}
-
-	if err := w.WriteField("response_format", "b64_json"); err != nil {
-		return nil, "", fmt.Errorf("write response_format field: %w", err)
 	}
 
 	w.Close()
@@ -123,6 +128,17 @@ func (e *ImageEditor) doEditRequest(ctx context.Context, body *bytes.Buffer, con
 	}
 
 	return respBody, nil
+}
+
+func mimeExtension(mimeType string) string {
+	switch mimeType {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/webp":
+		return ".webp"
+	default:
+		return ".png"
+	}
 }
 
 func (e *ImageEditor) parseEditResponse(respBody []byte) ([]byte, error) {

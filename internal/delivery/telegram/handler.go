@@ -1,10 +1,13 @@
 package telegram
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -337,21 +340,57 @@ func (h *Handler) sendInvoice(_ context.Context, chatID int64, productCode payme
 		return
 	}
 
-	invoice := tgbotapi.NewInvoice(
-		chatID,
-		product.Title,
-		fmt.Sprintf("Пополнение баланса на %d кредитов для AI-редактирования фото.", product.Credits),
-		string(productCode), // payload = product code; used in successful_payment handler
-		"",                  // provider_token empty for Telegram Stars (XTR)
-		"",                  // startParameter (not used)
-		"XTR",
-		[]tgbotapi.LabeledPrice{
-			{Label: product.Title, Amount: product.AmountStars},
-		},
-	)
+	// Send as JSON (application/json) — Telegram Stars rejects form-encoded
+	// sendInvoice requests and requires provider_token to be absent entirely.
+	reqBody := struct {
+		ChatID      int64  `json:"chat_id"`
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		Payload     string `json:"payload"`
+		Currency    string `json:"currency"`
+		Prices      []struct {
+			Label  string `json:"label"`
+			Amount int    `json:"amount"`
+		} `json:"prices"`
+	}{
+		ChatID:      chatID,
+		Title:       product.Title,
+		Description: fmt.Sprintf("Пополнение баланса на %d кредитов для AI-редактирования фото.", product.Credits),
+		Payload:     string(productCode),
+		Currency:    "XTR",
+		Prices: []struct {
+			Label  string `json:"label"`
+			Amount int    `json:"amount"`
+		}{{Label: product.Title, Amount: product.AmountStars}},
+	}
 
-	if _, err := h.bot.Send(invoice); err != nil {
+	data, err := json.Marshal(reqBody)
+	if err != nil {
+		h.log.Error("marshal invoice failed", "err", err)
+
+		return
+	}
+
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendInvoice", h.bot.Token)
+
+	resp, err := http.Post(apiURL, "application/json", bytes.NewReader(data)) //nolint:noctx
+	if err != nil {
 		h.log.Error("send invoice failed", "err", err, "chatID", chatID)
+
+		return
+	}
+
+	defer resp.Body.Close()
+
+	var apiResp tgbotapi.APIResponse
+	if err = json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		h.log.Error("decode invoice response failed", "err", err, "chatID", chatID)
+
+		return
+	}
+
+	if !apiResp.Ok {
+		h.log.Error("send invoice failed", "err", apiResp.Description, "chatID", chatID)
 	}
 }
 
@@ -392,13 +431,13 @@ func mainKeyboard() tgbotapi.ReplyKeyboardMarkup {
 func topUpKeyboard() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("5 кредитов — 50 ⭐", "buy:credits_5"),
+			tgbotapi.NewInlineKeyboardButtonData("5 кредитов — 250 ⭐", "buy:credits_5"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("10 кредитов — 90 ⭐", "buy:credits_10"),
+			tgbotapi.NewInlineKeyboardButtonData("10 кредитов — 450 ⭐", "buy:credits_10"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("25 кредитов — 200 ⭐", "buy:credits_25"),
+			tgbotapi.NewInlineKeyboardButtonData("25 кредитов — 900 ⭐", "buy:credits_25"),
 		),
 	)
 }
