@@ -105,7 +105,7 @@ jobs:
           DB_URL: ${{ secrets.DB_URL }}
         run: |
           ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
-            "migrate -path /opt/$APP_NAME/releases/$RELEASE_ID/migrations -database '$DB_URL' up"
+            "goose -dir /opt/$APP_NAME/releases/$RELEASE_ID/migrations postgres '$DB_URL' up"
 
       - name: Activate release and restart
         env:
