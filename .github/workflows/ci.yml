@@ -6,31 +6,131 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
-  build-and-test:
+  ci:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Setup Go
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.22'
+          go-version-file: go.mod
           cache: true
 
-      - name: Download dependencies
-        run: go mod download
+      - name: Run tests
+        run: go test ./...
 
-      - name: Vet
-        run: go vet ./...
+      - name: Run linter
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
 
-      - name: Check formatting
+      - name: Build
         run: |
-          if [ "$(gofmt -l . | wc -l)" -gt 0 ]; then
-            echo "The following files are not gofmt-formatted:"
-            gofmt -l .
-            exit 1
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/${{ secrets.APP_NAME }} ./cmd/bot/main.go
+
+  deploy:
+    needs: ci
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/${{ secrets.APP_NAME }} ./cmd/bot/main.go
+
+      - name: Prepare SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Upload release
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+          RELEASE_ID: ${{ github.sha }}
+        run: |
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "mkdir -p /opt/$APP_NAME/releases/$RELEASE_ID"
+          scp -P "$SSH_PORT" "dist/$APP_NAME" "$SSH_USER@$SSH_HOST:/opt/$APP_NAME/releases/$RELEASE_ID/$APP_NAME"
+
+      - name: Upload migrations
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+          RELEASE_ID: ${{ github.sha }}
+        run: |
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "mkdir -p /opt/$APP_NAME/releases/$RELEASE_ID/migrations"
+
+          if compgen -G "migrations/*.sql" > /dev/null; then
+            scp -P "$SSH_PORT" migrations/*.sql "$SSH_USER@$SSH_HOST:/opt/$APP_NAME/releases/$RELEASE_ID/migrations/"
+          else
+            echo "No migrations found"
           fi
 
-      - name: Test
-        run: go test ./...
+      - name: Run migrations
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+          RELEASE_ID: ${{ github.sha }}
+          DB_URL: ${{ secrets.DB_URL }}
+        run: |
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "migrate -path /opt/$APP_NAME/releases/$RELEASE_ID/migrations -database '$DB_URL' up"
+
+      - name: Activate release and restart
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+          RELEASE_ID: ${{ github.sha }}
+        run: |
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "
+            chmod +x /opt/$APP_NAME/releases/$RELEASE_ID/$APP_NAME &&
+            ln -sfn /opt/$APP_NAME/releases/$RELEASE_ID /opt/$APP_NAME/current &&
+            sudo systemctl restart $APP_NAME &&
+            sudo systemctl is-active $APP_NAME
+          "
+
+      - name: Cleanup old releases
+        if: success()
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+        run: |
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "
+            cd /opt/$APP_NAME/releases &&
+            ls -1dt */ | tail -n +6 | xargs -r rm -rf
+          "
