@@ -118,8 +118,8 @@ jobs:
           ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "
             chmod +x /opt/$APP_NAME/releases/$RELEASE_ID/$APP_NAME &&
             ln -sfn /opt/$APP_NAME/releases/$RELEASE_ID /opt/$APP_NAME/current &&
-            sudo systemctl restart $APP_NAME &&
-            sudo systemctl is-active $APP_NAME
+            sudo systemctl restart $APP_NAME.service &&
+            sudo systemctl is-active $APP_NAME.service
           "
 
       - name: Cleanup old releases
